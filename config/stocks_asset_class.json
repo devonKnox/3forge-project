@@ -1,0 +1,32 @@
+{
+  "numEntries": 390,
+  "groups": [
+    {
+      "name": "Tech",
+      "stocks": [
+        { "symbol": "AAPL",  "midPrice": 202.0 },
+        { "symbol": "MSFT",  "midPrice": 466.0 },
+        { "symbol": "GOOGL", "midPrice": 129.0 },
+        { "symbol": "AMD",   "midPrice": 98.0 }
+      ]
+    },
+    {
+      "name": "Auto",
+      "stocks": [
+        { "symbol": "TSLA",  "midPrice": 312.0 },
+        { "symbol": "GM",    "midPrice":  30.0 },
+        { "symbol": "F",     "midPrice":  12.5 },
+        { "symbol": "TM",    "midPrice": 180.0 }
+      ]
+    },
+    {
+      "name": "Finance",
+      "stocks": [
+        { "symbol": "JPM",   "midPrice": 150.0 },
+        { "symbol": "BAC",   "midPrice":  32.0 },
+        { "symbol": "C",     "midPrice":  55.0 },
+        { "symbol": "WFC",   "midPrice":  45.0 }
+      ]
+    }
+  ]
+}
