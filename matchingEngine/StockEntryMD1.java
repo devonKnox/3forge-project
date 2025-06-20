@@ -1,4 +1,8 @@
 package matchingEngine;
+/*
+ * This class is used to parse stock entries from a JSON file. Will be changed to account for volatility and other factors
+ */
+
 
 public class StockEntryMD1 {
     private String symbol;
