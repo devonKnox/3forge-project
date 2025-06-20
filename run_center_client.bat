@@ -40,7 +40,7 @@ if errorlevel 1 (
 REM ───────────────────────────────
 REM  Run application with arguments
 REM ───────────────────────────────
-set "CONFIG=config\stocks_asset_class.json"
+set "CONFIG=config\basic_sim.json"
 set "USER=demo"
 set "CLIENT_PORT=3289"
 set "CENTER_PORT=3270"

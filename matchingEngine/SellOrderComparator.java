@@ -5,7 +5,6 @@ public class SellOrderComparator implements Comparator<Order> {
     @Override
     public int compare(Order o1, Order o2) {
         // Market orders first
-        if (o1.getPrice() == 500) {return -1;} // test
         if (o1.getKind() == Order.Kind.MARKET && o2.getKind() != Order.Kind.MARKET) return -1;
         if (o2.getKind() == Order.Kind.MARKET && o1.getKind() != Order.Kind.MARKET) return 1;
 

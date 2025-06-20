@@ -1,3 +1,4 @@
+
 import com.f1.ami.client.*;
 import com.f1.ami.amicommon.*;
 import com.f1.utils.CH;
@@ -5,12 +6,6 @@ import com.f1.ami.amicommon.centerclient.*;
 import com.f1.bootstrap.ContainerBootstrap;
 import com.f1.utils.OH;
 import matchingEngine.*;
-
-// Guess we don't need these imports for now
-//import org.json.*;
-//import java.io.IOException;
-//import java.nio.file.Files;
-//import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -19,74 +14,15 @@ public class CenterClient implements AmiClientListener, AmiCenterClientListener 
     private final AmiClient amiClient;
     private final List<Order> receivedOrders = new ArrayList<>();
 
-    private static final Map<String, MatchingEngine> engines = new ConcurrentHashMap<>(); // Maps each stock to its MatchingEngine
-    private static final Map<String, ConcurrentLinkedQueue<Order>> externalOrderQueues = new ConcurrentHashMap<>(); // Maps each stock symbol to its external order queue
+    private static final Map<String, MatchingEngine> engines = new ConcurrentHashMap<>();
+    private static final Map<String, ConcurrentLinkedQueue<Order>> externalOrderQueues = new ConcurrentHashMap<>();
 
     public CenterClient(AmiClient client) {
         this.amiClient = client;
     }
 
-
-    @Override
-    public void onCenterMessage(AmiCenterDefinition center, AmiCenterClientObjectMessage m) {
-        System.out.println("Received AMI message: " + m);
-        try {
-            String raw = m.toString();
-            String[] parts = raw.split(",\\s*");
-
-            String symbol = null, typeStr = null, kindStr = null;
-            double price = 0;
-            int qty = 0;
-            long timestamp = 0;
-
-            for (String part : parts) {
-                String[] kv = part.split("=");
-                if (kv.length != 2) continue;
-                String key = kv[0].trim().toLowerCase();
-                String val = kv[1].replaceAll("[^0-9A-Za-z.\\-]", "");
-
-
-                switch (key) {
-                    case "symbol": symbol = val; break;
-                    case "type": typeStr = val.toUpperCase(); break;
-                    case "kind": kindStr = val.toUpperCase(); break;
-                    case "price": price = Double.parseDouble(val); break;
-                    case "qty": qty = Integer.parseInt(val); break;
-                    case "timestamp": timestamp = (long) Double.parseDouble(val); break;
-                }
-            }
-
-            if (typeStr != null && kindStr != null && symbol != null) {
-                Order.Type type = Order.Type.valueOf(typeStr);
-                Order.Kind kind = Order.Kind.valueOf(kindStr);
-                Order order = new Order(type, kind, qty, price, timestamp);
-                receivedOrders.add(order);
-                externalOrderQueues.get(symbol).add(order);
-                System.out.println("AMI ORDER RECEIVED — Symbol: " + symbol +
-    " | Type: " + type + " | Kind: " + kind + 
-    " | Qty: " + qty + " | Price: " + price +
-    " | Timestamp: " + timestamp);
-
-            }
-
-        } catch (Exception e) {
-            System.err.println("Failed to parse AMI message: " + m);
-            e.printStackTrace();
-        }
-    }
-
-    @Override public void onLoggedIn(AmiClient c) {}
-    @Override public void onConnect(AmiClient c) {}
-    @Override public void onDisconnect(AmiClient c) {}
-    @Override public void onMessageSent(AmiClient c, CharSequence msg) {}
-    @Override public void onMessageReceived(AmiClient c, long now, long seqnum, int status, CharSequence msg) {}
-    @Override public void onCommand(AmiClient c, String requestId, String cmd, String user, String type, String id, Map<String, Object> params) {}
-    @Override public void onCenterConnect(AmiCenterDefinition center) {}
-    @Override public void onCenterDisconnect(AmiCenterDefinition center) {}
-    @Override public void onCenterMessageBatchDone(AmiCenterDefinition center) {}
-
-    public void run(String configFile, String username, int clientPort, int centerPort) throws Exception {
-        new ContainerBootstrap(CenterClient.class, new String[] { configFile });
+    public void run(String configFile, String username, int clientPort, int centerPort, String assetClass, double volatility, int simSpeed) throws Exception {
+        new ContainerBootstrap(CenterClient.class, new String[]{ configFile });
 
         amiClient.addListener(this);
         amiClient.start("localhost", clientPort, username, OPTION_AUTO_PROCESS_INCOMING);
@@ -95,11 +31,11 @@ public class CenterClient implements AmiClientListener, AmiCenterClientListener 
         centerClient.connect("subscription1", "localhost", centerPort, this);
         centerClient.subscribe("subscription1", CH.s("client_orders"));
 
-        List<StockEntryMD1> stockList = StockConfigLoader.loadGroupFromJSON(configFile, "Auto");
+        List<StockEntryMD1> allStocks = StockConfigLoader.loadGroupFromJSON(configFile, assetClass);
         ConcurrentLinkedQueue<StockUpdate> updateQueue = new ConcurrentLinkedQueue<>();
         Random rand = new Random();
 
-        for (StockEntryMD1 stock : stockList) {
+        for (StockEntryMD1 stock : allStocks) {
             String symbol = stock.getSymbol();
             MatchingEngine engine = new MatchingEngine(symbol, stock.getMidPrice());
             engines.put(symbol, engine);
@@ -129,9 +65,10 @@ public class CenterClient implements AmiClientListener, AmiCenterClientListener 
                     Order.Type type = rand.nextDouble() < 0.7 ? Order.Type.BUY : Order.Type.SELL;
                     Order.Kind kind = rand.nextDouble() < 0.8 ? Order.Kind.LIMIT : Order.Kind.MARKET;
                     double price = stock.getMidPrice();
+
                     if (kind == Order.Kind.LIMIT) {
                         double spread = engine.getSpread();
-                        double offset = rand.nextGaussian() * Math.max(0.05, spread * (5 + rand.nextDouble() * 10)) / 4;
+                        double offset = rand.nextGaussian() * Math.max(0.05, spread * (5 + rand.nextDouble() * 10)) / 4 * volatility;
                         price += offset;
                     }
 
@@ -149,7 +86,7 @@ public class CenterClient implements AmiClientListener, AmiCenterClientListener 
                         updateQueue.add(new StockUpdate(symbol, System.currentTimeMillis(), newPrice, orderType));
                     }
 
-                    OH.sleep(1000);
+                    OH.sleep(simSpeed);
                 }
             }).start();
         }
@@ -180,4 +117,58 @@ public class CenterClient implements AmiClientListener, AmiCenterClientListener 
         while (true);
     }
 
+    @Override public void onCenterMessage(AmiCenterDefinition center, AmiCenterClientObjectMessage m) {
+        System.out.println("Received AMI message: " + m);
+        try {
+            String raw = m.toString();
+            String[] parts = raw.split(",\s*");
+
+            String symbol = null, typeStr = null, kindStr = null;
+            double price = 0;
+            int qty = 0;
+            long timestamp = 0;
+
+            for (String part : parts) {
+                String[] kv = part.split("=");
+                if (kv.length != 2) continue;
+                String key = kv[0].trim().toLowerCase();
+                String val = kv[1].replaceAll("[^0-9A-Za-z.-]", "");
+
+                switch (key) {
+                    case "symbol": symbol = val; break;
+                    case "type": typeStr = val.toUpperCase(); break;
+                    case "kind": kindStr = val.toUpperCase(); break;
+                    case "price": price = Double.parseDouble(val); break;
+                    case "qty": qty = Integer.parseInt(val); break;
+                    case "timestamp": timestamp = (long) Double.parseDouble(val); break;
+                }
+            }
+
+            if (typeStr != null && kindStr != null && symbol != null) {
+                Order.Type type = Order.Type.valueOf(typeStr);
+                Order.Kind kind = Order.Kind.valueOf(kindStr);
+                Order order = new Order(type, kind, qty, price, timestamp);
+                receivedOrders.add(order);
+                externalOrderQueues.get(symbol).add(order);
+                System.out.println("AMI ORDER RECEIVED — Symbol: " + symbol +
+                    " | Type: " + type + " | Kind: " + kind +
+                    " | Qty: " + qty + " | Price: " + price +
+                    " | Timestamp: " + timestamp);
+            }
+
+        } catch (Exception e) {
+            System.err.println("Failed to parse AMI message: " + m);
+            e.printStackTrace();
+        }
+    }
+
+    @Override public void onLoggedIn(AmiClient c) {}
+    @Override public void onConnect(AmiClient c) {}
+    @Override public void onDisconnect(AmiClient c) {}
+    @Override public void onMessageSent(AmiClient c, CharSequence msg) {}
+    @Override public void onMessageReceived(AmiClient c, long now, long seqnum, int status, CharSequence msg) {}
+    @Override public void onCommand(AmiClient c, String requestId, String cmd, String user, String type, String id, Map<String, Object> params) {}
+    @Override public void onCenterConnect(AmiCenterDefinition center) {}
+    @Override public void onCenterDisconnect(AmiCenterDefinition center) {}
+    @Override public void onCenterMessageBatchDone(AmiCenterDefinition center) {}
 }
