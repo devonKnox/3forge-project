@@ -1,6 +1,8 @@
 package matchingEngine;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.PriorityQueue;
 
 public class MatchingEngine{
@@ -13,6 +15,7 @@ public class MatchingEngine{
     private double lastTradePrice;
     private PriorityQueue<Order> buyOrders;
     private PriorityQueue<Order> sellOrders;
+    public boolean tradeExecuted = false; // Used to determine if a trade was executed in the last processTrade() call
 
     public MatchingEngine(String stockSymbol, double LastTradePrice) {
         this.stockSymbol = stockSymbol;
@@ -47,6 +50,7 @@ public class MatchingEngine{
     }
 
     public void processAllTrades() {
+        this.tradeExecuted = false; // Reset tradeExecuted flag before processing trades
         while (!buyOrders.isEmpty() && !sellOrders.isEmpty()) {
             Order buyOrder = buyOrders.peek();
             Order sellOrder = sellOrders.peek();
@@ -54,6 +58,7 @@ public class MatchingEngine{
         if (!isMatch(buyOrder, sellOrder)) {
             return;
         }
+
         processTrade(buyOrder, sellOrder);
         }
     }
@@ -75,6 +80,8 @@ public class MatchingEngine{
 
         if (buyOrder.getQuantity() == 0) buyOrders.poll(); // Remove the order if quantity is zero
         if (sellOrder.getQuantity() == 0) sellOrders.poll();
+
+        this.tradeExecuted = true; // Mark that a trade was executed
     }
 
     private boolean isMatch(Order buy, Order sell) {
@@ -100,6 +107,23 @@ public class MatchingEngine{
         }
         return topOrders;
     }
+
+    public Map<String, List<Order>> getAllOrders() {
+        Map<String, List<Order>> orderMap = new HashMap<>();
+
+        List<Order> bids = new ArrayList<>(buyOrders);
+        List<Order> asks = new ArrayList<>(sellOrders);
+
+        // Optional: sort to ensure correct priority (highest bid, lowest ask)
+        bids.sort(new BuyOrderComparator());
+        asks.sort(new SellOrderComparator());
+
+        orderMap.put("bids", bids);
+        orderMap.put("asks", asks);
+
+        return orderMap;
+    }
+
 
 
     public Order getBestBid() {

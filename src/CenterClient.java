@@ -1,4 +1,3 @@
-
 import com.f1.ami.client.*;
 import com.f1.ami.amicommon.*;
 import com.f1.utils.CH;
@@ -6,6 +5,7 @@ import com.f1.ami.amicommon.centerclient.*;
 import com.f1.bootstrap.ContainerBootstrap;
 import com.f1.utils.OH;
 import matchingEngine.*;
+
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -22,81 +22,77 @@ public class CenterClient implements AmiClientListener, AmiCenterClientListener 
     }
 
     public void run(String configFile, String username, int clientPort, int centerPort, String assetClass, double volatility, int simSpeed) throws Exception {
-        new ContainerBootstrap(CenterClient.class, new String[]{ configFile });
+        System.setProperty("f1.appname", "sim_" + assetClass); // Was throwing error if asset classes had same "f1.appname"
+        new ContainerBootstrap(CenterClient.class, new String[]{configFile});
 
         amiClient.addListener(this);
         amiClient.start("localhost", clientPort, username, OPTION_AUTO_PROCESS_INCOMING);
 
         AmiCenterClient centerClient = new AmiCenterClient(username);
-        centerClient.connect("subscription1", "localhost", centerPort, this);
-        centerClient.subscribe("subscription1", CH.s("client_orders"));
+
+        // Make IDs unique per asset class
+        String subName = "sub_" + assetClass;
+
+        centerClient.connect(subName, "localhost", centerPort, this);
+        centerClient.subscribe(subName, CH.s("client_orders"));
 
         List<StockEntryMD1> allStocks = StockConfigLoader.loadGroupFromJSON(configFile, assetClass);
-        ConcurrentLinkedQueue<StockUpdate> updateQueue = new ConcurrentLinkedQueue<>();
+        ConcurrentLinkedQueue<StockUpdate> updateQueue = new ConcurrentLinkedQueue<>(); // Gets sent to AMI
         Random rand = new Random();
 
         for (StockEntryMD1 stock : allStocks) {
             String symbol = stock.getSymbol();
             MatchingEngine engine = new MatchingEngine(symbol, stock.getMidPrice());
             engines.put(symbol, engine);
-            externalOrderQueues.put(symbol, new ConcurrentLinkedQueue<>());
+            externalOrderQueues.put(symbol, new ConcurrentLinkedQueue<>()); // Each order queue FROM AMI is specific to the stock symbol
+            ConcurrentLinkedQueue<Order> queue = externalOrderQueues.get(symbol);
 
             new Thread(() -> {
                 while (true) {
-                    ConcurrentLinkedQueue<Order> queue = externalOrderQueues.get(symbol);
+                    try {
 
-                    if (!queue.isEmpty()) {
-                        Order externalOrder = queue.poll();
-                        engine.addOrder(externalOrder);
-
-                        double prevPrice = engine.getLastTradePrice();
-                        engine.processAllTrades();
-                        double newPrice = engine.getLastTradePrice();
-
-                        if (prevPrice != newPrice) {
-                            String orderType = externalOrder.getKind() == Order.Kind.MARKET ? "Market" : "Limit";
-                            updateQueue.add(new StockUpdate(symbol, System.currentTimeMillis(), newPrice, orderType));
-                            System.out.println("AMI Order executed and update queued: " + newPrice);
+                        if (!queue.isEmpty()) { // Add outside of loop?
+                            Order externalOrder = queue.poll();
+                            engine.addOrder(externalOrder); // Add order to buy/sell queue
                         }
 
-                        continue;
+                        Order.Type type = rand.nextDouble() < 0.7 ? Order.Type.BUY : Order.Type.SELL;
+                        Order.Kind kind = rand.nextDouble() < 0.8 ? Order.Kind.LIMIT : Order.Kind.MARKET;
+                        double price = stock.getMidPrice();
+
+                        if (kind == Order.Kind.LIMIT) { // For limit orders, add some randomness to the price
+                            double spread = engine.getSpread();  // Should add some memory/feedback so price can actually be driven by the market
+                            double offset = rand.nextGaussian() * Math.max(0.05, spread * (5 + rand.nextDouble() * 10)) / 4 * volatility;
+                            price += offset;
+                        }
+
+                        int qty = Math.max(1, (int) Math.round(Math.exp(2.5 + 1.0 * rand.nextGaussian()))); // Random qty for order 
+                        // Order simOrder = new Order(type, kind, qty, price, System.currentTimeMillis());
+
+                        // engine.addOrder(simOrder);
+                        engine.processAllTrades(); // Also sets tradeExecuted to true if a trade was made (aka if processAllTrades() caused processTrade() to run)
+                        double newPrice = engine.getLastTradePrice();
+
+                        if (engine.tradeExecuted) { // Trade went through
+                            String orderType = kind == Order.Kind.MARKET ? "Market" : "Limit";
+                            updateQueue.add(new StockUpdate(symbol, System.currentTimeMillis(), newPrice, orderType)); // Send to update queue (full of multiple stocks of the asset), which then goes to AMI
+                        }
+                        System.out.println(engine.getAllOrders());
+
+                        OH.sleep(simSpeed);
+                    } catch (Exception e) {
+                        e.printStackTrace();
                     }
-
-                    Order.Type type = rand.nextDouble() < 0.7 ? Order.Type.BUY : Order.Type.SELL;
-                    Order.Kind kind = rand.nextDouble() < 0.8 ? Order.Kind.LIMIT : Order.Kind.MARKET;
-                    double price = stock.getMidPrice();
-
-                    if (kind == Order.Kind.LIMIT) {
-                        double spread = engine.getSpread();
-                        double offset = rand.nextGaussian() * Math.max(0.05, spread * (5 + rand.nextDouble() * 10)) / 4 * volatility;
-                        price += offset;
-                    }
-
-                    int qty = Math.max(1, (int) Math.round(Math.exp(2.5 + 1.0 * rand.nextGaussian())));
-                    Order simOrder = new Order(type, kind, qty, price, System.currentTimeMillis());
-
-                    engine.addOrder(simOrder);
-
-                    double prevPrice = engine.getLastTradePrice();
-                    engine.processAllTrades();
-                    double newPrice = engine.getLastTradePrice();
-
-                    if (prevPrice != newPrice) {
-                        String orderType = kind == Order.Kind.MARKET ? "Market" : "Limit";
-                        updateQueue.add(new StockUpdate(symbol, System.currentTimeMillis(), newPrice, orderType));
-                    }
-
-                    OH.sleep(simSpeed);
                 }
             }).start();
         }
 
         new Thread(() -> {
             while (true) {
-                StockUpdate update = updateQueue.poll();
-                if (update != null) {
-                    try {
-                        String id = update.symbol + " " + update.timestamp;
+                try {
+                    StockUpdate update = updateQueue.poll();
+                    if (update != null) {
+                        String id = update.symbol + "_" + update.timestamp;
                         synchronized (amiClient) {
                             amiClient.startObjectMessage("simpleMD", id);
                             amiClient.addMessageParamString("Symbol", update.symbol);
@@ -105,19 +101,18 @@ public class CenterClient implements AmiClientListener, AmiCenterClientListener 
                             amiClient.addMessageParamString("orderType", update.order_type);
                             amiClient.sendMessageAndFlush();
                         }
-                    } catch (Exception e) {
-                        e.printStackTrace();
+                    } else {
+                        OH.sleep(1000);
                     }
-                } else {
-                    OH.sleep(1000);
+                } catch (Exception e) {
+                    e.printStackTrace();
                 }
             }
         }).start();
 
-        while (true);
+        while (true); // keep simulation alive
     }
-
-    @Override public void onCenterMessage(AmiCenterDefinition center, AmiCenterClientObjectMessage m) {
+    @Override public void onCenterMessage(AmiCenterDefinition center, AmiCenterClientObjectMessage m) { // Understand parsing code
         System.out.println("Received AMI message: " + m);
         try {
             String raw = m.toString();
@@ -144,7 +139,7 @@ public class CenterClient implements AmiClientListener, AmiCenterClientListener 
                 }
             }
 
-            if (typeStr != null && kindStr != null && symbol != null) {
+            if (symbol != null) { // ERROR: AMI orders never sending due to not entering this if statement; seems like symbol is always null (since only having symbol != null here prevents errors)
                 Order.Type type = Order.Type.valueOf(typeStr);
                 Order.Kind kind = Order.Kind.valueOf(kindStr);
                 Order order = new Order(type, kind, qty, price, timestamp);

@@ -1,31 +1,21 @@
 @echo off
 setlocal enabledelayedexpansion
 
-REM ───────────────────────────────
-REM  Configuration
-REM ───────────────────────────────
+REM ─── Config ──────────────────────────────────────────────
 set "LIB=lib"
 set "SRC=src"
 set "OUT=classes"
-set "MAIN=SimulationRunner"
 set "CP=.;%LIB%\out.jar;%LIB%\autocode.jar;%LIB%\json-20250517.jar;%OUT%"
+set "CONFIG=config\basic_sim.json"
+set "USERNAME=demo"
 
-REM ───────────────────────────────
-REM  Prepare class output directory
-REM ───────────────────────────────
-if not exist "%OUT%" mkdir "%OUT%"
+REM ─── Clean Out Old Classes ───────────────────────────────
+echo Cleaning all compiled classes...
+if exist "%OUT%" rmdir /S /Q "%OUT%"
+mkdir "%OUT%"
 
-REM ───────────────────────────────
-REM  Clean old compiled classes
-REM ───────────────────────────────
-echo Cleaning old classes...
-del /Q %OUT%\*.class >nul 2>&1
-del /Q %OUT%\matchingEngine\*.class >nul 2>&1
-
-REM ───────────────────────────────
-REM  Compile all sources
-REM ───────────────────────────────
-echo Compiling...
+REM ─── Recompile Everything ────────────────────────────────
+echo Compiling all sources...
 javac -d "%OUT%" -cp "%CP%" ^
     %SRC%\CenterClient.java ^
     %SRC%\SimulationRunner.java ^
@@ -37,22 +27,30 @@ if errorlevel 1 (
     exit /b
 )
 
-REM ───────────────────────────────
-REM  Run application with arguments
-REM ───────────────────────────────
-set "CONFIG=config\basic_sim.json"
-set "USER=demo"
+REM ─── Launch Parallel Simulations ─────────────────────────
 set "CLIENT_PORT=3289"
 set "CENTER_PORT=3270"
 
-echo Running SimulationRunner...
-java -Df1.license.mode=dev ^
+start "" cmd /k java -cp "%CP%" -Df1.license.mode=dev ^
  --add-exports java.base/sun.security.action=ALL-UNNAMED ^
  --add-opens java.base/java.lang=ALL-UNNAMED ^
  --add-opens java.base/java.lang.reflect=ALL-UNNAMED ^
  --add-opens java.base/java.io=ALL-UNNAMED ^
  --add-opens java.base/java.util=ALL-UNNAMED ^
  --add-opens java.base/java.net=ALL-UNNAMED ^
- -cp "%CP%" %MAIN% %CONFIG% %USER% %CLIENT_PORT% %CENTER_PORT%
+ SimulationRunner %CONFIG% %USERNAME%_Auto %CLIENT_PORT% %CENTER_PORT% Auto
+
+start "" cmd /k java -cp "%CP%" -Df1.license.mode=dev ^
+ --add-exports java.base/sun.security.action=ALL-UNNAMED ^
+ --add-opens java.base/java.lang=ALL-UNNAMED ^
+ --add-opens java.base/java.lang.reflect=ALL-UNNAMED ^
+ --add-opens java.base/java.io=ALL-UNNAMED ^
+ --add-opens java.base/java.util=ALL-UNNAMED ^
+ --add-opens java.base/java.net=ALL-UNNAMED ^
+ SimulationRunner %CONFIG% %USERNAME%_Tech %CLIENT_PORT% %CENTER_PORT% Tech
+
+REM Uncomment for additional asset class
+REM start "" cmd /k java -cp "%CP%" -Df1.license.mode=dev ...
+REM SimulationRunner %CONFIG% %USERNAME%_Crypto %CLIENT_PORT% %CENTER_PORT% Crypto
 
 endlocal
