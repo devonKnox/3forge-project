@@ -6,25 +6,8 @@ import java.util.Arrays;
 
 public class SimulationRunner {
     public static void main(String[] args) throws Exception {
-        // User settings — change as desired
-        int simSpeed = 1000; // Time in ms between simulated orders
-
-        // Map of asset classes to their volatility levels
-        Map<String, Double> defaultVolatility = Map.of(
-            "Auto", 0.5
-            // "Tech", 0.7,
-            // "Finance",0.6
-        );
-
-        // Choose which asset classes to simulate — comment/uncomment as needed
-        List<String> assetClassesToSimulate = Arrays.asList(
-            "Auto"
-            //"Tech"
-            // "Finance",
-        );
-
-        if (args.length != 4) {
-            System.out.println("Usage: java SimulationRunner <config.json> <username> <clientPort> <centerPort>");
+        if (args.length != 5) {
+            System.out.println("Usage: java SimulationRunner <config.json> <username> <clientPort> <centerPort> <assetClass>");
             return;
         }
 
@@ -32,13 +15,21 @@ public class SimulationRunner {
         String username = args[1];
         int clientPort = Integer.parseInt(args[2]);
         int centerPort = Integer.parseInt(args[3]);
+        String assetClass = args[4];
 
-        for (String assetClass : assetClassesToSimulate) {
-            double volatility = defaultVolatility.getOrDefault(assetClass, 1.0);
-            System.out.println("Starting simulation for asset class: " + assetClass + " with volatility " + volatility);
-            AmiClient baseClient = new AmiClient();
-            CenterClient runner = new CenterClient(baseClient);
-            runner.run(configFile, username, clientPort, centerPort, assetClass, volatility, simSpeed);
-        }
+        double volatility = switch (assetClass) {
+            case "Auto" -> 0.5;
+            case "Tech" -> 0.7;
+            // case "Crypto" -> 2.0;
+            default -> 1.0;
+        };
+
+        int simSpeed = 1000;
+
+        System.setProperty("f1.appname", "sim_" + assetClass);
+
+        AmiClient baseClient = new AmiClient();
+        CenterClient runner = new CenterClient(baseClient);
+        runner.run(configFile, username, clientPort, centerPort, assetClass, volatility, simSpeed);
     }
 }
