@@ -67,13 +67,13 @@ public class CenterClient implements AmiClientListener, AmiCenterClientListener 
                         }
 
                         int qty = Math.max(1, (int) Math.round(Math.exp(2.5 + 1.0 * rand.nextGaussian()))); // Random qty for order 
-                        // Order simOrder = new Order(type, kind, qty, price, System.currentTimeMillis());
+                        Order simOrder = new Order(type, kind, qty, price, System.currentTimeMillis());
 
-                        // engine.addOrder(simOrder);
+                        engine.addOrder(simOrder);
                         engine.processAllTrades(); // Also sets tradeExecuted to true if a trade was made (aka if processAllTrades() caused processTrade() to run)
                         double newPrice = engine.getLastTradePrice();
 
-                        if (engine.tradeExecuted) { // Trade went through
+                        if (engine.tradeExecuted) { // Trade went through in matching engine -> send update to AMI
                             String orderType = kind == Order.Kind.MARKET ? "Market" : "Limit";
                             updateQueue.add(new StockUpdate(symbol, System.currentTimeMillis(), newPrice, orderType)); // Send to update queue (full of multiple stocks of the asset), which then goes to AMI
                         }
@@ -112,11 +112,19 @@ public class CenterClient implements AmiClientListener, AmiCenterClientListener 
 
         while (true); // keep simulation alive
     }
-    @Override public void onCenterMessage(AmiCenterDefinition center, AmiCenterClientObjectMessage m) { // Understand parsing code
+
+    @Override
+    public void onCenterMessage(AmiCenterDefinition center, AmiCenterClientObjectMessage m) {
         System.out.println("Received AMI message: " + m);
         try {
             String raw = m.toString();
-            String[] parts = raw.split(",\s*");
+            int start = raw.indexOf("{");
+            int end = raw.lastIndexOf("}");
+            if (start >= 0 && end > start) {
+                raw = raw.substring(start + 1, end);
+            }
+
+            String[] parts = raw.split(",\\s*");
 
             String symbol = null, typeStr = null, kindStr = null;
             double price = 0;
@@ -124,35 +132,44 @@ public class CenterClient implements AmiClientListener, AmiCenterClientListener 
             long timestamp = 0;
 
             for (String part : parts) {
-                String[] kv = part.split("=");
+                String[] kv = part.split("=", 2);
                 if (kv.length != 2) continue;
                 String key = kv[0].trim().toLowerCase();
-                String val = kv[1].replaceAll("[^0-9A-Za-z.-]", "");
+                String val = kv[1].trim();
 
                 switch (key) {
-                    case "symbol": symbol = val; break;
+                    case "symbol": symbol = val.toUpperCase(); break;
                     case "type": typeStr = val.toUpperCase(); break;
                     case "kind": kindStr = val.toUpperCase(); break;
-                    case "price": price = Double.parseDouble(val); break;
-                    case "qty": qty = Integer.parseInt(val); break;
-                    case "timestamp": timestamp = (long) Double.parseDouble(val); break;
+                    case "price": price = Double.parseDouble(val.replaceAll("[^0-9.\\-Ee]", "")); break;
+                    case "qty": qty = Integer.parseInt(val.replaceAll("[^0-9]", "")); break;
+                    case "timestamp": timestamp = (long) Double.parseDouble(val.replaceAll("[^0-9.\\-Ee]", "")); break;
+                    default: System.err.println("Ignoring unknown key: " + key);
                 }
             }
 
-            if (symbol != null) { // ERROR: AMI orders never sending due to not entering this if statement; seems like symbol is always null (since only having symbol != null here prevents errors)
-                Order.Type type = Order.Type.valueOf(typeStr);
-                Order.Kind kind = Order.Kind.valueOf(kindStr);
-                Order order = new Order(type, kind, qty, price, timestamp);
-                receivedOrders.add(order);
-                externalOrderQueues.get(symbol).add(order);
-                System.out.println("AMI ORDER RECEIVED — Symbol: " + symbol +
-                    " | Type: " + type + " | Kind: " + kind +
-                    " | Qty: " + qty + " | Price: " + price +
-                    " | Timestamp: " + timestamp);
+            if (symbol == null || typeStr == null || kindStr == null) {
+                System.err.println(" Incomplete order data. Symbol/type/kind missing.");
+                return;
             }
 
+            if (!externalOrderQueues.containsKey(symbol)) {
+                System.err.println(" No order queue found for symbol: " + symbol);
+                return;
+            }
+
+            Order.Type type = Order.Type.valueOf(typeStr);
+            Order.Kind kind = Order.Kind.valueOf(kindStr);
+            Order order = new Order(type, kind, qty, price, timestamp);
+            receivedOrders.add(order);
+            externalOrderQueues.get(symbol).add(order);
+            System.out.println(" AMI ORDER RECEIVED — Symbol: " + symbol +
+                " | Type: " + type + " | Kind: " + kind +
+                " | Qty: " + qty + " | Price: " + price +
+                " | Timestamp: " + timestamp);
+
         } catch (Exception e) {
-            System.err.println("Failed to parse AMI message: " + m);
+            System.err.println(" Failed to parse AMI message: " + m);
             e.printStackTrace();
         }
     }
