@@ -31,7 +31,7 @@ REM ─── Launch Parallel Simulations ────────────�
 set "CLIENT_PORT=3289"
 set "CENTER_PORT=3270"
 
-start "" cmd /k java -cp "%CP%" -Df1.license.mode=dev ^
+java -cp "%CP%" -Df1.license.mode=dev ^
  --add-exports java.base/sun.security.action=ALL-UNNAMED ^
  --add-opens java.base/java.lang=ALL-UNNAMED ^
  --add-opens java.base/java.lang.reflect=ALL-UNNAMED ^

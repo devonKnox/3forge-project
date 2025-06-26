@@ -1,19 +1,31 @@
 // setting up center for matching engine and trade generation
-// index?
-// drop table, triggers, methods if exists ...
 // // Add indexes later for fast SFW commands (definitely needed for HDB)
 
 // DROP TRIGGER IF EXISTS addOrdertoBook(String symbol, String direction, )
-
-DROP TABLE IF EXISTS buyOrders;
-DROP TABLE IF EXISTS sellOrders;
-//DROP TABLE IF EXISTS mdLevel1;
-
-// DROP METHOD IF EXISTS compareBuyOrders(String )
-// DROP METHOD IF EXISTS sortBuyOrders()
-
-CREATE PUBLIC TABLE buyOrders(symbol String, orderId int, price Double, quantity int, timestamp double) USE RefreshPeriodMs="100" OnUndefColumn="ADD" InitialCapacity="1000"; // Look into params for referesh, etc. later
-
-CREATE PUBLIC TABLE sellOrders(symbol String, orderId int, price Double, quantity int, timestamp double) USE RefreshPeriodMs="100" OnUndefColumn="ADD" InitialCapacity="1000"; // Look into params for referesh, etc. later
-
+//Add tables with "I" flag later for correct startup
 //CREATE TRIGGER TRIGGER_PROCESS_ORDERS OFTYPE AMISCRIPT ON MD1Snaps USE canMutateRow="false" onInsertedScript="int ret = processOrders(Symbol);";
+
+
+DROP TRIGGER IF EXISTS executeTrade;
+DROP TABLE IF EXISTS trades;
+
+CREATE PUBLIC TABLE trades(
+    symbol String,
+    quantity Int,
+    price double,
+    sellAccount String,
+    buyAccount String,
+    timestamp double
+);
+
+CREATE TRIGGER executeTrade OFTYPE AMISCRIPT ON orderFeed USE
+rowVar = "_row"
+onInsertedScript="insert into trades values(\"test\", 1, 1, \"test\", \"test\", 1)";
+//if(${symbol} == "TSLA" && ${direction} == "BUY") {
+//insert into tslaBuyLadder(quantity, price, kind, timestamp) values(1, 0, "TS", \"${timestamp()}\");
+//}""";
+
+
+//CREATE TRIGGER ordertoBook_tslaSellLadder OFTYPE AMISCRIPT ON orderFeed USE
+//onInsertedScript="insert into test_one(symbol, price) values("test", 100)";
+//insert into tslaBuyLadder(symbol, price) values("test", 100);
