@@ -29,7 +29,7 @@ public class SimulationRunner {
         System.setProperty("f1.appname", "sim_" + assetClass);
 
         AmiClient baseClient = new AmiClient();
-        CenterClient runner = new CenterClient(baseClient);
+        genSendOrders runner = new genSendOrders(baseClient);
         runner.run(configFile, username, clientPort, centerPort, assetClass, volatility, simSpeed);
     }
 }
