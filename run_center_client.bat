@@ -17,7 +17,7 @@ mkdir "%OUT%"
 REM ─── Recompile Everything ────────────────────────────────
 echo Compiling all sources...
 javac -d "%OUT%" -cp "%CP%" ^
-    %SRC%\CenterClient.java ^
+    %SRC%\genSendOrders.java ^
     %SRC%\SimulationRunner.java ^
     matchingEngine\*.java
 
@@ -39,18 +39,5 @@ start "" cmd /k java -cp "%CP%" -Df1.license.mode=dev ^
  --add-opens java.base/java.util=ALL-UNNAMED ^
  --add-opens java.base/java.net=ALL-UNNAMED ^
  SimulationRunner %CONFIG% %USERNAME%_Auto %CLIENT_PORT% %CENTER_PORT% Auto
-
-start "" cmd /k java -cp "%CP%" -Df1.license.mode=dev ^
- --add-exports java.base/sun.security.action=ALL-UNNAMED ^
- --add-opens java.base/java.lang=ALL-UNNAMED ^
- --add-opens java.base/java.lang.reflect=ALL-UNNAMED ^
- --add-opens java.base/java.io=ALL-UNNAMED ^
- --add-opens java.base/java.util=ALL-UNNAMED ^
- --add-opens java.base/java.net=ALL-UNNAMED ^
- SimulationRunner %CONFIG% %USERNAME%_Tech %CLIENT_PORT% %CENTER_PORT% Tech
-
-REM Uncomment for additional asset class
-REM start "" cmd /k java -cp "%CP%" -Df1.license.mode=dev ...
-REM SimulationRunner %CONFIG% %USERNAME%_Crypto %CLIENT_PORT% %CENTER_PORT% Crypto
 
 endlocal

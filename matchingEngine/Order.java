@@ -9,13 +9,15 @@ public class Order {
         LIMIT, MARKET
     }
 
+    private String symbol;
     private Type type;
     private Kind kind;
     private int quantity;
     private double price;
     private long timestamp;
 
-    public Order(Type type, Kind kind, int quantity, double price, long timestamp) {
+    public Order(String symbol, Type type, Kind kind, int quantity, double price, long timestamp) {
+        this.symbol = symbol;
         this.type = type;
         this.kind = kind;
         this.quantity = quantity;
@@ -23,6 +25,10 @@ public class Order {
         this.timestamp = timestamp;
     }
 
+    public String getSymbol() {
+        return symbol;
+    }
+    
     public Type getType() {
         return type;
     }
