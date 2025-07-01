@@ -38,7 +38,8 @@ public class genSendOrders implements AmiClientListener, AmiCenterClientListener
 
         List<StockEntryMD1> allStocks = StockConfigLoader.loadGroupFromJSON(configFile, assetClass);
         ConcurrentLinkedQueue<Order> updateQueue = new ConcurrentLinkedQueue<>(); // Gets sent to AMI
-        Random rand = new Random();System.out.println("Loaded stock list for " + assetClass + ": " + allStocks.size() + " symbols");
+        Random rand = new Random();
+        System.out.println("Loaded stock list for " + assetClass + ": " + allStocks.size() + " symbols");
 
         for (StockEntryMD1 stock : allStocks) {
             String symbol = stock.getSymbol();
@@ -97,7 +98,7 @@ public class genSendOrders implements AmiClientListener, AmiCenterClientListener
                                 amiClient.addMessageParamInt("OpenQty", update.getQuantity()); // This will later be decremented so that orders can filled until its 0
                                 amiClient.addMessageParamDouble("timestamp", System.currentTimeMillis());
                                 amiClient.sendMessageAndFlush();
-                                orderId += 1;
+                                orderId += rand.nextInt(1, 1000); // Increment orderId for next order, to ensure uniqueness
                         }
                     } else {
                         OH.sleep(1000);
