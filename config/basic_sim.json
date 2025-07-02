@@ -14,9 +14,7 @@
       "name": "Auto",
       "stocks": [
         { "symbol": "TSLA",  "midPrice": 312},
-        { "symbol": "GM",    "midPrice":  30.0 },
-        { "symbol": "F",     "midPrice":  12.5 },
-        { "symbol": "TM",    "midPrice": 180.0 }
+        { "symbol": "TM",  "midPrice": 100}
       ]
     },
     {

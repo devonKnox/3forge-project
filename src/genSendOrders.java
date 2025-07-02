@@ -8,12 +8,14 @@ import matchingEngine.*;
 
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
 public class genSendOrders implements AmiClientListener, AmiCenterClientListener {
     public static final byte OPTION_AUTO_PROCESS_INCOMING = 2;
     private final AmiClient amiClient;
     private final List<Order> receivedOrders = new ArrayList<>();
     private static final Map<String, ConcurrentLinkedQueue<Order>> externalOrderQueues = new ConcurrentHashMap<>();
+    public int orderId = 0;
 
     public genSendOrders(AmiClient client) {
         this.amiClient = client;
@@ -36,7 +38,8 @@ public class genSendOrders implements AmiClientListener, AmiCenterClientListener
 
         List<StockEntryMD1> allStocks = StockConfigLoader.loadGroupFromJSON(configFile, assetClass);
         ConcurrentLinkedQueue<Order> updateQueue = new ConcurrentLinkedQueue<>(); // Gets sent to AMI
-        Random rand = new Random();System.out.println("Loaded stock list for " + assetClass + ": " + allStocks.size() + " symbols");
+        Random rand = new Random();
+        System.out.println("Loaded stock list for " + assetClass + ": " + allStocks.size() + " symbols");
 
         for (StockEntryMD1 stock : allStocks) {
             String symbol = stock.getSymbol();
@@ -77,35 +80,25 @@ public class genSendOrders implements AmiClientListener, AmiCenterClientListener
 
         new Thread(() -> {
             while (true) {
-                int one = 1; // placeholder for order ID, can be replaced with a more meaningful ID if needed
                 try {
                     Order update = updateQueue.poll();
                     if (update != null) {
                         synchronized (amiClient) {
-                            // if (update.getType() == Order.Type.BUY) { // Add to buy queue
-                        String id = update.getSymbol() + "_" + System.currentTimeMillis(); // Unique ID for the order
-
-                                // System.out.println("Adding to buy queue: " + update.getSymbol() + " | Price: " + update.getPrice() + " | Qty: " + update.getQuantity());
-                                amiClient.startObjectMessage("buyOrders", id); // make it orderID to ensure uniqueness?
+                                String id = update.getSymbol() + "_" + System.currentTimeMillis(); // Unique ID for the order
+                                String random_account_char = new Random().ints(6, 0, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".length()).mapToObj(i -> "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".charAt(i)).collect(Collectors.collectingAndThen(Collectors.toList(),list -> list.stream().map(Object::toString).collect(Collectors.joining()))); // Change for later, just to show who is actualy sending in orders
+                                System.out.println("Adding to order feed: " + update.getSymbol() + " | Price: " + update.getPrice() + " | Qty: " + update.getQuantity());
+                                amiClient.startObjectMessage("orderFeed", id); // make it orderID to ensure uniqueness?
                                 amiClient.addMessageParamString("symbol", update.getSymbol());
-                                amiClient.addMessageParamInt("orderId", one);
+                                amiClient.addMessageParamInt("orderId", orderId);
+                                amiClient.addMessageParamString("account", random_account_char);
+                                amiClient.addMessageParamString("direction", update.getType().toString());
+                                amiClient.addMessageParamString("kind", update.getKind().toString());
                                 amiClient.addMessageParamDouble("price", update.getPrice());
-                                amiClient.addMessageParamInt("quantity", update.getQuantity());
+                                amiClient.addMessageParamInt("Qty", update.getQuantity());
+                                amiClient.addMessageParamInt("OpenQty", update.getQuantity()); // This will later be decremented so that orders can filled until its 0
                                 amiClient.addMessageParamDouble("timestamp", System.currentTimeMillis());
                                 amiClient.sendMessageAndFlush();
-                            // }
-                        //     else { // Add to sell queue
-                        // String id = update.getSymbol() + "_" + System.currentTimeMillis(); // Unique ID for the order
-
-                        //         amiClient.startObjectMessage("sellOrders", id); // make it orderID to ensure uniqueness?
-                        //         amiClient.addMessageParamString("symbol", update.getSymbol());
-                        //         amiClient.addMessageParamInt("orderId", one);
-                        //         amiClient.addMessageParamDouble("price", update.getPrice());
-                        //         amiClient.addMessageParamInt("quantity", update.getQuantity());
-                        //         amiClient.addMessageParamDouble("timestamp", System.currentTimeMillis());
-                        //         amiClient.sendMessageAndFlush();
-                        //         System.out.println("Sent SELL order: " + update.getSymbol() + " | Price: " + update.getPrice() + " | Qty: " + update.getQuantity());
-                        //     }
+                                orderId += rand.nextInt(1, 1000); // Increment orderId for next order, to ensure uniqueness
                         }
                     } else {
                         OH.sleep(1000);
