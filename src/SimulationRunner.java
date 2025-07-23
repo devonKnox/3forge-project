@@ -6,7 +6,7 @@ import java.util.Arrays;
 
 public class SimulationRunner {
     public static void main(String[] args) throws Exception {
-        if (args.length != 5) {
+        if (args.length != 4) {
             System.out.println("Usage: java SimulationRunner <config.json> <username> <clientPort> <centerPort> <assetClass>");
             return;
         }
@@ -15,21 +15,9 @@ public class SimulationRunner {
         String username = args[1];
         int clientPort = Integer.parseInt(args[2]);
         int centerPort = Integer.parseInt(args[3]);
-        String assetClass = args[4];
-
-        double volatility = switch (assetClass) {
-            case "Auto" -> 0.5;
-            case "Tech" -> 0.7;
-            // case "Crypto" -> 2.0;
-            default -> 1.0;
-        };
-
         int simSpeed = 1000;
-
-        System.setProperty("f1.appname", "sim_" + assetClass);
-
         AmiClient baseClient = new AmiClient();
         genSendOrders runner = new genSendOrders(baseClient);
-        runner.run(configFile, username, clientPort, centerPort, assetClass, volatility, simSpeed);
+        runner.run(configFile, username, clientPort, centerPort, simSpeed);
     }
 }

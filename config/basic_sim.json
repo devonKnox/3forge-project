@@ -14,9 +14,8 @@
       "name": "Auto",
       "stocks": [
         { "symbol": "TSLA",  "midPrice": 312},
-        { "symbol": "GM",    "midPrice":  30.0 },
-        { "symbol": "F",     "midPrice":  12.5 },
-        { "symbol": "TM",    "midPrice": 180.0 }
+        { "symbol": "TM",  "midPrice": 100},
+        { "symbol": "F",  "midPrice": 11}
       ]
     },
     {
@@ -28,5 +27,27 @@
         { "symbol": "WFC",   "midPrice":  45.0 }
       ]
     }
+  ],
+  "accounts": [
+    { "name": "JPMorgan North America", "activityLevel": 0.9, "capital": 5000 },
+    { "name": "Goldman Sachs Flow Desk", "activityLevel": 0.95, "capital": 4500 },
+    { "name": "Morgan Stanley Prime", "activityLevel": 0.75, "capital": 4200 },
+    { "name": "Citadel Securities", "activityLevel": 1.0, "capital": 6000 },
+    { "name": "Jane Street Trading", "activityLevel": 0.85, "capital": 3200 },
+    { "name": "Point72 Quant", "activityLevel": 0.6, "capital": 1800 },
+    { "name": "Two Sigma Capital", "activityLevel": 0.7, "capital": 2700 },
+    { "name": "BlackRock Equity Desk", "activityLevel": 0.4, "capital": 9000 },
+    { "name": "Vanguard Institutional", "activityLevel": 0.3, "capital": 10000 },
+    { "name": "Fidelity Global Execution", "activityLevel": 0.45, "capital": 8500 },
+    { "name": "Bank of America Institutional", "activityLevel": 0.5, "capital": 4300 },
+    { "name": "UBS Securities USA", "activityLevel": 0.55, "capital": 3900 },
+    { "name": "Deutsche Bank Flow", "activityLevel": 0.6, "capital": 3100 },
+    { "name": "Barclays Global Markets", "activityLevel": 0.65, "capital": 2800 },
+    { "name": "Wells Fargo Quant Ops", "activityLevel": 0.4, "capital": 3500 },
+    { "name": "Credit Suisse Trading", "activityLevel": 0.5, "capital": 2900 },
+    { "name": "Renaissance Technologies", "activityLevel": 0.7, "capital": 4100 },
+    { "name": "DRW Execution Team", "activityLevel": 0.8, "capital": 2300 },
+    { "name": "HSBC Electronic Desk", "activityLevel": 0.55, "capital": 3200 },
+    { "name": "Jefferies Global Execution", "activityLevel": 0.6, "capital": 2500 }
   ]
 }

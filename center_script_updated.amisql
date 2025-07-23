@@ -1,0 +1,211 @@
+DROP TRIGGER IF EXISTS trade_on_insert;
+DROP TIMER IF EXISTS vps_timer;
+DROP METHOD IF EXISTS executeTrade(String symbol, List buys, List sells);
+DROP METHOD IF EXISTS simpleMatch(String symbol);
+DROP METHOD IF EXISTS getSymbols();
+DROP METHOD IF EXISTS percent_matched();
+DROP METHOD IF EXISTS tradeVelocity(String symbol);
+DROP METHOD IF EXISTS processAllTrades();
+DROP METHOD IF EXISTS getSpread(Double bid, Double ask);
+DROP METHOD IF EXISTS archiveTrades_method(String date,String symbol,Integer qty,double price,String buyAcc,String sellAcc);
+DROP METHOD IF EXISTS date();
+DROP METHOD IF EXISTS vps_timer_help();
+DROP METHOD IF EXISTS date_to_time(String date);
+DROP METHOD IF EXISTS vps();
+
+// Create Tables
+DROP TABLE IF EXISTS prices_begin_trading;
+CREATE PUBLIC TABLE prices_begin_trading AS USE ds="AMI" EXECUTE SELECT symbol, price FROM trades GROUP BY symbol ORDER BY date DESC LIMIT 20;
+
+// Create Methods
+CREATE METHOD Double date_to_time (String date)
+{
+List timeParts = date.split("-");
+String  l = timeParts.get(1);
+List li = l.split(" ");
+String lis = li.get(0);
+List lt = lis.split(":");
+int hour = lt[0];
+int hour_convert_secs = hour * 60 * 60;
+
+int mins = lt[1];
+int mins_convert_secs = mins * 60;
+
+int secs = lt[2];
+
+Double seconds = hour_convert_secs + mins_convert_secs + secs;
+
+return seconds;
+};
+
+
+CREATE METHOD Double percent_matched()
+{
+double number_shares_ordered = USE ds="AMI" EXECUTE SELECT sum(Qty) from orderFeed;
+double number_shares_not_traded = USE ds="AMI" EXECUTE SELECT sum(OpenQty) from orderFeed;
+return 100* (number_shares_ordered - number_shares_not_traded) / (number_shares_ordered);
+};
+
+CREATE METHOD Double tradeVelocity(String symbol)
+{
+Table recent_trades = USE ds="AMI" EXECUTE SELECT quantity FROM trades WHERE symbol == "${symbol}" ORDER BY date ASC LIMIT 10;
+Double velo = SELECT sum(quantity) from recent_trades;
+return velo;
+};
+
+CREATE METHOD Double vps()
+{
+Table recent_100_trades = USE ds="AMI" EXECUTE SELECT price, qty, date FROM trades ORDER BY date DESC LIMIT 100;
+String latest_trade = recent_100_trades.getValue(0, "date");
+Double end_time = date_to_time(latest_trade);
+
+String bottom_trade = recent_100_trades.getValue(99, "date");
+Double start_time = date_to_time(bottom_trade);
+
+Double volume = 0;
+
+for (int i = 0; i < 100 ; i++) { // Change if you want to analyze throughput over larger trade quantity
+Double price = recent_100_trades.getValue(i, "price");
+Double qty = recent_100_trades.getValue(i, "qty");
+Double product = price * qty;
+volume += product;
+}
+
+
+Double elapsed = end_time - start_time;
+Double volume_throughput = volume / elapsed;
+return volume_throughput;
+};
+
+CREATE METHOD int vps_timer_help()
+{
+USE ds="AMI" INSERT INTO performance_speed VALUES(${timestamp()}, ${vps()}, "7-23-1");
+return 1;
+};
+
+CREATE METHOD String date()
+{
+return formatDate(timestamp(), "MMMM/dd/yyyy-HH:mm:ss zzz","EST5EDT");
+};
+
+CREATE METHOD Int archiveTrades_method(String date, String symbol, Int qty, Double price, String buyAcc, String sellAcc)  // This will need to be used somehow, whether that's thru a timer/trigger or existing procedure
+{
+USE ds="AMI" INSERT INTO tradeArchives VALUES("${date()}", "${symbol}", ${qty}, ${price}, "${buyAcc}", "${sellAcc}");
+return 1;
+};
+
+CREATE METHOD Double getSpread(Double bid, Double ask)
+{ // Make complex later
+    return ask - bid;
+};
+
+CREATE METHOD Int executeTrade(String symbol, List buys, List sells)
+{
+  while (buys.size() > 0 && sells.size() > 0) {
+    // Retrieve best buy and best sell
+    Map buy = buys.get(0);
+    Map sell = sells.get(0);
+  
+    Double buyPrice = buy.get("price");
+    Double sellPrice = sell.get("price");
+    
+    Double spread = getSpread(buyPrice, sellPrice);
+    if (spread -5 >= 0) { // Spread logic
+      return 0; // If spread isn't crossed (work on later), then don't trade!
+    }
+    
+    else {
+      Int buyQty = buy.get("OpenQty");
+      String buyAcc = buy.get("account");
+      String buyType = buy.get("kind");
+      Int sellQty = sell.get("OpenQty");
+      String sellAcc = sell.get("account");
+      
+      Int matchQty = minimum(buyQty, sellQty);
+      Int newOpenQty_buy = buyQty - matchQty;
+      Int newOpenQty_sell = sellQty - matchQty;
+      Double tradePrice = (buyPrice + sellPrice) / 2;
+      
+      USE ds="AMI" EXECUTE INSERT INTO trades VALUES ("${symbol}", ${tradePrice}, ${matchQty}, "${buyAcc}", "${sellAcc}", "${date()}");
+    
+      int i = archiveTrades_method(date(), symbol, matchQty, tradePrice, buyAcc, sellAcc);
+  
+      // Need to update openQty in order book for both buy and sells
+      USE ds="AMI" EXECUTE UPDATE orderFeed SET OpenQty = ${newOpenQty_buy} WHERE account == "${buyAcc}";
+      USE ds="AMI" EXECUTE UPDATE orderFeed SET OpenQty = ${newOpenQty_sell} WHERE account == "${sellAcc}";
+    
+      return 1;
+    }
+  }
+};
+
+CREATE METHOD Int simpleMatch(String symbol)
+{
+  // Trading priority: Market Buy Limit Sell, Limit Buy Market Sell, Limit Buy Limit sell (Market-market orders can't occur, since no agreement on price can be set)
+  
+  // Market Buy, Limt Sell
+  //Get one BUY order
+  Table buyTable = USE ds="AMI" EXECUTE SELECT * FROM orderFeed WHERE direction == "BUY" AND OpenQty > 0 AND kind == "MARKET" AND symbol == "${symbol}" ORDER BY price DESC, timestamp ASC;
+
+  // Get one SELL order
+  Table sellTable = USE ds="AMI" EXECUTE SELECT * FROM orderFeed WHERE direction == "SELL" AND OpenQty > 0 AND kind == "MARKET" AND symbol == "${symbol}" ORDER BY price ASC, timestamp ASC;
+
+  // Get rows
+  List buys = buyTable.getRows();
+  List sells = sellTable.getRows();
+
+  if (buys.size() == 0 || sells.size() == 0) { // Option 2: Limit Buy, Market Sell
+    Table buyTable = USE ds="AMI" EXECUTE SELECT * FROM orderFeed WHERE direction == "BUY" AND OpenQty > 0 AND kind == "LIMIT" AND symbol == "${symbol}" ORDER BY price DESC, timestamp ASC;
+    Table sellTable = USE ds="AMI" EXECUTE SELECT * FROM orderFeed WHERE direction == "SELL" AND OpenQty > 0 AND kind == "MARKET" AND symbol == "${symbol}" ORDER BY price ASC, timestamp ASC;
+    buys = buyTable.getRows();
+    sells = sellTable.getRows();
+    
+    if (buys.size() == 0 || sells.size() == 0) { // Option 3: Limit Buy and sell
+      Table buyTable = USE ds="AMI" EXECUTE SELECT * FROM orderFeed WHERE direction == "BUY" AND OpenQty > 0 AND kind == "LIMIT" AND symbol == "${symbol}" ORDER BY price DESC, timestamp ASC;
+      Table sellTable = USE ds="AMI" EXECUTE SELECT * FROM orderFeed WHERE direction == "SELL" AND OpenQty > 0 AND kind == "LIMIT" AND symbol == "${symbol}" ORDER BY price ASC, timestamp ASC;
+      buys = buyTable.getRows();
+      sells = sellTable.getRows();
+      
+      if (buys.size() == 0 || sells.size() == 0) {
+        return 0;
+      }
+    }
+  }
+  int ret = executeTrade(symbol, buys, sells);
+  if (ret == 1) {
+    return 1;
+  }
+  
+  else {
+    return 2;
+  }
+};
+
+CREATE METHOD List getSymbols() {
+        Table distinctSymbols = USE ds="AMI" EXECUTE SELECT symbol FROM orderFeed GROUP BY symbol;
+    List l = distinctSymbols.getRows();
+    int size = l.size();
+    List syms = new List();
+    for (int i = 0; i < size; i++) {
+      Map m = l.get(i);
+      syms.add(m.get("symbol"));
+    }
+    return syms;
+};
+
+CREATE METHOD Int processAllTrades()
+{
+  list symbolsToTrade = getSymbols();
+  Iterator i = symbolsToTrade.iterator();
+  int count = 0;
+  while(i.hasNext()) {
+    String sym = symbolsToTrade.get(count);
+    count += 1;
+    i.next();
+    simpleMatch(sym);
+  }
+};
+
+CREATE TRIGGER trade_on_insert OFTYPE AMISCRIPT ON orderFeed USE onInsertedScript="int ret = processAllTrades();";
+CREATE TIMER vps_timer OFTYPE AMISCRIPT ON "100" USE script="int i = vps_timer_help();"; // Timer to log VPS every 10 seconds
+//CREATE TIMER remove_fills OFTYPE AMISCRIPT ON "10000" USE script="USE ds=\"AMI\" EXECUTE DELETE FROM orderFeed WHERE OpenQty == 0;"; // Removes filled orders from feed every 10 seconds
