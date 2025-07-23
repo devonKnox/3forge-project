@@ -13,6 +13,7 @@ import java.util.stream.Collectors;
 public class genSendOrders implements AmiClientListener, AmiCenterClientListener {
     public static final byte OPTION_AUTO_PROCESS_INCOMING = 2;
     private final AmiClient amiClient;
+    private List<StockEntryMD1> allStocks;
     private final List<Order> receivedOrders = new ArrayList<>();
     private static final Map<String, ConcurrentLinkedQueue<Order>> externalOrderQueues = new ConcurrentHashMap<>();
     public int orderId = 0;
@@ -20,9 +21,8 @@ public class genSendOrders implements AmiClientListener, AmiCenterClientListener
     public genSendOrders(AmiClient client) {
         this.amiClient = client;
     }
-
-    public void run(String configFile, String username, int clientPort, int centerPort, String assetClass, double volatility, int simSpeed) throws Exception {
-        System.setProperty("f1.appname", "sim_" + assetClass); // Was throwing error if asset classes had same "f1.appname"
+    public void run(String configFile, String username, int clientPort, int centerPort, int simSpeed) throws Exception {
+        System.setProperty("f1.appname", "sim_"); // Was throwing error if asset classes had same "f1.appname"
         new ContainerBootstrap(genSendOrders.class, new String[]{configFile});
 
         amiClient.addListener(this);
@@ -31,15 +31,17 @@ public class genSendOrders implements AmiClientListener, AmiCenterClientListener
         AmiCenterClient centerClient = new AmiCenterClient(username);
 
         // Make IDs unique per asset class
-        String subName = "sub_" + assetClass;
+        String subName = "sub_";
 
         centerClient.connect(subName, "localhost", centerPort, this);
-        centerClient.subscribe(subName, CH.s("client_orders"));
+        centerClient.subscribe(subName, CH.s("prices_begin_trading"));
 
-        List<StockEntryMD1> allStocks = StockConfigLoader.loadGroupFromJSON(configFile, assetClass);
+        allStocks = StockConfigLoader.loadStocksFromJSON(configFile);
+        List<StockConfigLoader.Account> accounts = StockConfigLoader.loadAccountsFromJSON(configFile);
         ConcurrentLinkedQueue<Order> updateQueue = new ConcurrentLinkedQueue<>(); // Gets sent to AMI
         Random rand = new Random();
-        System.out.println("Loaded stock list for " + assetClass + ": " + allStocks.size() + " symbols");
+        for (StockConfigLoader.Account acc : accounts) {System.out.println("Loaded: " + acc);}
+        System.out.println("Loaded stock list for " + allStocks.size() + " symbols");
 
         for (StockEntryMD1 stock : allStocks) {
             String symbol = stock.getSymbol();
@@ -56,20 +58,30 @@ public class genSendOrders implements AmiClientListener, AmiCenterClientListener
 
                         Order.Type type = rand.nextDouble() < 0.7 ? Order.Type.BUY : Order.Type.SELL;
                         Order.Kind kind = rand.nextDouble() < 0.8 ? Order.Kind.LIMIT : Order.Kind.MARKET;
-                        double price = stock.getMidPrice();
+                        double lastPrice = stock.getMidPrice();
+                        double baseVol = 0.01 * lastPrice; // 1% base volatility
 
-                        if (kind == Order.Kind.LIMIT) { // For limit orders, add some randomness to the price
-                            double spread = 5; //engine.getSpread();  // Should add some memory/feedback so price can actually be driven by the market
-                            double offset = rand.nextGaussian() * Math.max(0.05, spread * (5 + rand.nextDouble() * 10)) / 4 * volatility;
-                            price += offset;
+                        // Simulate direction with drift (e.g. buy = push up, sell = push down)
+                        double drift = type == Order.Type.BUY ? 0.002 : -0.002;
+                        double noise = rand.nextGaussian() * baseVol;
+                        double trend = drift * lastPrice + noise;
+
+                        // Final price with direction and volatility
+                        double price = lastPrice + trend;
+
+                        // Step 3: For limit orders, apply a wider range (like posting to the book)
+                        if (kind == Order.Kind.LIMIT) {
+                            double limitSpread = rand.nextDouble() * 0.005 * lastPrice; // 0.5% max limit offset
+                            price += (type == Order.Type.BUY ? -limitSpread : limitSpread); // bid lower, ask higher
                         }
 
-                        int qty = Math.max(1, (int) Math.round(Math.exp(2.5 + 1.0 * rand.nextGaussian()))); // Random qty for order 
+                        // Step 4: Round and constrain price
+                        price = Math.max(0.01, Math.round(price * 100.0) / 100.0);
+
+                        // Step 5: Create order
+                        int qty = Math.max(1, (int) Math.round(Math.exp(2.5 + 1.0 * rand.nextGaussian())));
                         Order simOrder = new Order(symbol, type, kind, qty, price, System.currentTimeMillis());
-                        
-                        String orderType = kind == Order.Kind.MARKET ? "Market" : "Limit";
                         updateQueue.add(simOrder); // Send to update queue (full of multiple stocks of the asset), which then goes to AMI
-                        
                         OH.sleep(simSpeed);
                     } catch (Exception e) {
                         e.printStackTrace();
@@ -86,11 +98,12 @@ public class genSendOrders implements AmiClientListener, AmiCenterClientListener
                         synchronized (amiClient) {
                                 String id = update.getSymbol() + "_" + System.currentTimeMillis(); // Unique ID for the order
                                 String random_account_char = new Random().ints(6, 0, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".length()).mapToObj(i -> "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".charAt(i)).collect(Collectors.collectingAndThen(Collectors.toList(),list -> list.stream().map(Object::toString).collect(Collectors.joining()))); // Change for later, just to show who is actualy sending in orders
+                                StockConfigLoader.Account account_ex = weightedRandomAccount(accounts, rand);
                                 System.out.println("Adding to order feed: " + update.getSymbol() + " | Price: " + update.getPrice() + " | Qty: " + update.getQuantity());
                                 amiClient.startObjectMessage("orderFeed", id); // make it orderID to ensure uniqueness?
                                 amiClient.addMessageParamString("symbol", update.getSymbol());
                                 amiClient.addMessageParamInt("orderId", orderId);
-                                amiClient.addMessageParamString("account", random_account_char);
+                                amiClient.addMessageParamString("account", account_ex.name);
                                 amiClient.addMessageParamString("direction", update.getType().toString());
                                 amiClient.addMessageParamString("kind", update.getKind().toString());
                                 amiClient.addMessageParamDouble("price", update.getPrice());
@@ -112,66 +125,82 @@ public class genSendOrders implements AmiClientListener, AmiCenterClientListener
         while (true); // keep simulation alive
     }
 
-    @Override
-    public void onCenterMessage(AmiCenterDefinition center, AmiCenterClientObjectMessage m) {
-        System.out.println("Received AMI message: " + m);
-        try {
-            String raw = m.toString();
-            int start = raw.indexOf("{");
-            int end = raw.lastIndexOf("}");
-            if (start >= 0 && end > start) {
-                raw = raw.substring(start + 1, end);
+@Override
+public void onCenterMessage(AmiCenterDefinition center, AmiCenterClientObjectMessage m) {
+    System.out.println("Received AMI message: " + m);
+    try {
+        String raw = m.toString();
+        int start = raw.indexOf("{");
+        int end = raw.lastIndexOf("}");
+        if (start >= 0 && end > start) {
+            raw = raw.substring(start + 1, end);
+        }
+
+        String[] parts = raw.split(",\\s*");
+
+        String symbol = null;
+        double price = 0;
+
+        for (String part : parts) {
+            String[] kv = part.split("=", 2);
+            if (kv.length != 2) continue;
+            String key = kv[0].trim().toLowerCase();
+            String val = kv[1].trim();
+
+            switch (key) {
+                case "symbol":
+                    symbol = val.toUpperCase();
+                    break;
+                case "price":
+                    price = Double.parseDouble(val.replaceAll("[^0-9.\\-Ee]", ""));
+                    break;
+                default:
+                    System.err.println("Ignoring unknown key: " + key);
             }
+        }
 
-            String[] parts = raw.split(",\\s*");
-
-            String symbol = null, typeStr = null, kindStr = null;
-            double price = 0;
-            int qty = 0;
-            long timestamp = 0;
-
-            for (String part : parts) {
-                String[] kv = part.split("=", 2);
-                if (kv.length != 2) continue;
-                String key = kv[0].trim().toLowerCase();
-                String val = kv[1].trim();
-
-                switch (key) {
-                    case "symbol": symbol = val.toUpperCase(); break;
-                    case "type": typeStr = val.toUpperCase(); break;
-                    case "kind": kindStr = val.toUpperCase(); break;
-                    case "price": price = Double.parseDouble(val.replaceAll("[^0-9.\\-Ee]", "")); break;
-                    case "qty": qty = Integer.parseInt(val.replaceAll("[^0-9]", "")); break;
-                    case "timestamp": timestamp = (long) Double.parseDouble(val.replaceAll("[^0-9.\\-Ee]", "")); break;
-                    default: System.err.println("Ignoring unknown key: " + key);
+        if (symbol != null && price > 0) {
+            StockEntryMD1 matchedStock = null;
+            for (StockEntryMD1 stock : allStocks) {
+                if (stock.getSymbol().equalsIgnoreCase(symbol)) {
+                    matchedStock = stock;
+                    break;
                 }
             }
 
-            if (symbol == null || typeStr == null || kindStr == null) {
-                System.err.println(" Incomplete order data. Symbol/type/kind missing.");
-                return;
+            if (matchedStock != null) {
+                double oldPrice = matchedStock.getMidPrice();
+                matchedStock.setMidPrice(price);
+                System.out.println("New trading day detected. Updated midprice for " + symbol + ": " + oldPrice + " → " + price);
+            } else {
+                System.err.println("Symbol not found in stock list: " + symbol);
             }
-
-            if (!externalOrderQueues.containsKey(symbol)) {
-                System.err.println(" No order queue found for symbol: " + symbol);
-                return;
-            }
-
-            Order.Type type = Order.Type.valueOf(typeStr);
-            Order.Kind kind = Order.Kind.valueOf(kindStr);
-            Order order = new Order(symbol, type, kind, qty, price, timestamp);
-            receivedOrders.add(order);
-            externalOrderQueues.get(symbol).add(order);
-            // System.out.println(" AMI ORDER RECEIVED — Symbol: " + symbol +
-            //     " | Type: " + type + " | Kind: " + kind +
-            //     " | Qty: " + qty + " | Price: " + price +
-            //     " | Timestamp: " + timestamp);
-
-        } catch (Exception e) {
-            System.err.println(" Failed to parse AMI message: " + m);
-            e.printStackTrace();
+        } else {
+            System.err.println("Invalid or incomplete price update message.");
         }
+
+    } catch (Exception e) {
+        System.err.println("Failed to parse AMI message: " + m);
+        e.printStackTrace();
     }
+}
+
+
+    // Allows different accounts from JSON to send orders according to their available capital and activity level
+    public static StockConfigLoader.Account weightedRandomAccount(List<StockConfigLoader.Account> accounts, Random rand) {
+    double total = 0;
+    for (StockConfigLoader.Account acc : accounts) total += acc.activityLevel;
+
+    double r = rand.nextDouble() * total;
+    double sum = 0;
+    for (StockConfigLoader.Account acc : accounts) {
+        sum += acc.activityLevel;
+        if (r <= sum) return acc;
+    }
+
+    return accounts.get(accounts.size() - 1); // fallback
+    }
+
 
     @Override public void onLoggedIn(AmiClient c) {}
     @Override public void onConnect(AmiClient c) {}

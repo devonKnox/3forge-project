@@ -18,4 +18,8 @@ public class StockEntryMD1 {
     public String getSymbol() { return symbol; }
     public double getMidPrice() { return midPrice; }
     public int getNumEntries() { return numEntries; }
+    public void setMidPrice(double midPrice) {
+        this.midPrice = midPrice;
+    }
+
 }

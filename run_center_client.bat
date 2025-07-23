@@ -38,6 +38,6 @@ java -cp "%CP%" -Df1.license.mode=dev ^
  --add-opens java.base/java.io=ALL-UNNAMED ^
  --add-opens java.base/java.util=ALL-UNNAMED ^
  --add-opens java.base/java.net=ALL-UNNAMED ^
- SimulationRunner %CONFIG% %USERNAME%_Auto %CLIENT_PORT% %CENTER_PORT% Auto
+ SimulationRunner %CONFIG% %USERNAME%_Auto %CLIENT_PORT% %CENTER_PORT%
 
 endlocal

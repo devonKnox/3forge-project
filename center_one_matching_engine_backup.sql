@@ -7,6 +7,12 @@ DROP METHOD IF EXISTS simpleMatch(String symbol);
 DROP METHOD IF EXISTS getSymbols()
 DROP METHOD IF EXISTS processAllTrades();
 DROP METHOD IF EXISTS getSpread(Double bid, Double ask);
+DROP METHOD IF EXISTS archiveTrades_method(double date,String symbol,Integer qty,double price,String buyAcc,String sellAcc);
+
+CREATE METHOD Integer archiveTrades_method(double date,String symbol,Integer qty,double price,String buyAcc,String sellAcc)
+{
+USE ds="AMI" EXECUTE INSERT INTO tradeArchives VALUES(${date}, "${symbol}", ${qty}, ${price}, "${buyAcc}", "${sellAcc}");
+};
 
 CREATE METHOD Double getSpread(Double bid, Double ask)
 { // Make complex later
@@ -50,7 +56,7 @@ CREATE METHOD Int simpleMatch(String symbol)
       
       Double spread = getSpread(buyPrice, sellPrice);
     
-      if (spread >= 10) { // Spread logic
+      if (sellPrice - buyPrice > 20) { // Spread logic
         return 0; // If spread isn't crossed (work on later), then don't trade!
       }
       
@@ -69,8 +75,11 @@ CREATE METHOD Int simpleMatch(String symbol)
         Int newOpenQty_buy = buyQty - matchQty;
         Int newOpenQty_sell = sellQty - matchQty;
         Double tradePrice = (buyPrice + sellPrice) / 2;
-        USE ds="AMI" EXECUTE INSERT INTO trades VALUES ("${symbol}", ${tradePrice}, ${matchQty}, "${buyAcc}", "${sellAcc}", ${timestamp()} );
+        USE ds="AMI" EXECUTE INSERT INTO trades VALUES ("${symbol}", ${tradePrice}, ${matchQty}, "${buyAcc}", "${sellAcc}", "${timestamp()}" );
       
+        Double time = timestamp();
+       int ii = archiveTrades_method(time, symbol, matchQty, tradePrice, buyAcc, sellAcc);
+
         // Need to update openQty in order book for both buy and sells
         USE ds="AMI" EXECUTE UPDATE orderFeed SET OpenQty = ${newOpenQty_buy} WHERE account == "${buyAcc}";
         USE ds="AMI" EXECUTE UPDATE orderFeed SET OpenQty = ${newOpenQty_sell} WHERE account == "${sellAcc}";
