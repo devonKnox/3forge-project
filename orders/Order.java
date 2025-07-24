@@ -1,13 +1,12 @@
-package matchingEngine;
+package orders;
 
+/**
+ * This class primarily serves as a container for the Type and Kind enums,
+ * and provides methods needed by other classes in the matchingEngine package.
+ */
 public class Order {
-    public enum Type {
-        BUY, SELL
-    }
-
-    public enum Kind {
-        LIMIT, MARKET
-    }
+    public enum Type { BUY, SELL }
+    public enum Kind { MARKET, LIMIT }
 
     private String symbol;
     private Type type;
@@ -25,25 +24,11 @@ public class Order {
         this.timestamp = timestamp;
     }
 
-    public String getSymbol() {
-        return symbol;
-    }
-    
-    public Type getType() {
-        return type;
-    }
-
-    public Kind getKind() {
-        return kind;
-    }
-
-    public int getQuantity() {
-        return quantity;
-    }
-
-    public double getPrice() {
-        return price;
-    }
+    public String getSymbol() { return symbol; }
+    public Type getType() { return type; }
+    public Kind getKind() { return kind; }
+    public int getQuantity() { return quantity; }
+    public double getPrice() { return price; }
 
     public long getTimestamp() {
         return timestamp;
