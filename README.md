@@ -1,5 +1,5 @@
 
-# 3forge-project
+# Trading Flow Simulation with AMI (3forge Summer Internship Project)
 ![Simulation](3forge-trading-flow-simulation.png)
 ## Project Description
 
