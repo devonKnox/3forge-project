@@ -1,6 +1,6 @@
 
 # 3forge-project
-
+![Simulation](3forge-trading-flow-simulation.png)
 ## Project Description
 
 This project simulates a financial trading environment using [3forge's AMI](https://www.3forge.com/) platform. It models live stock order flow using asset-specific volatility, customizable simulation speeds, and integrates with AMI's client and center APIs.
